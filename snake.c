@@ -1,13 +1,18 @@
+//gcc snake.c -o snake $(pkg-config --libs allegro-5 allegro_primitives-5)
 #include <allegro5/allegro.h>
 #include <allegro5/allegro_primitives.h>
 #include "util.h"
 #include <stdio.h>
 #include <stdbool.h>
 
+//Consts
+#define ARRAY_SIZE(array) (sizeof(array)/sizeof(array[0]))
 #define CIMA 0
 #define DIREITA 1
 #define BAIXO 2
 #define ESQUERDA 3
+#define HEAD "HEAD"
+#define BODY "BODY"
 
 const int LARGURA_TELA = 640;
 const int ALTURA_TELA = 480;
@@ -15,23 +20,40 @@ const int ALTURA_TELA = 480;
 ALLEGRO_DISPLAY *janela = NULL;
 ALLEGRO_EVENT_QUEUE *fila_eventos = NULL;
 
+//GAME VARIABLES
 int sizeSquare = 30;
+int gapSquare = 3;//Gap between squares
 int speed = 10;
+//------------------
 
 bool inicializar();
 bool isOutOfBounds();
+bool isAxisY();
 void correctPosition();
+void drawSquare();
+
+typedef struct Square{
+    char *type;//HEAD or BODY
+    int direction;
+    int x;
+    int y;
+} Square;
 
 int main(){
     if(!inicializar()){
         return -1;
     }
 
-    int head_x = randBelow(LARGURA_TELA);
-    int head_y = randBelow(ALTURA_TELA);
-    int direction = ESQUERDA;
+    int x = randBelow(LARGURA_TELA);
+    int y = randBelow(ALTURA_TELA);
+
+    Square snake[] = {
+        {HEAD, DIREITA, x, y},
+        {BODY, DIREITA, x-gapSquare-sizeSquare, y}
+    };
 
     bool shouldExit = false;
+    int selectedDirection = DIREITA;
 
     while(shouldExit == false){
         ALLEGRO_EVENT evento;
@@ -43,16 +65,16 @@ int main(){
             if(evento.type == ALLEGRO_EVENT_KEY_DOWN){
                 switch(evento.keyboard.keycode){
                     case ALLEGRO_KEY_UP:
-                        direction = CIMA;
+                        selectedDirection = CIMA;
                         break;
                     case ALLEGRO_KEY_DOWN:
-                        direction = BAIXO;
+                        selectedDirection = BAIXO;
                         break;
                     case ALLEGRO_KEY_LEFT:
-                        direction = ESQUERDA;
+                        selectedDirection = ESQUERDA;
                         break;
                     case ALLEGRO_KEY_RIGHT:
-                        direction = DIREITA;
+                        selectedDirection = DIREITA;
                         break;
                 }
             } else if (evento.type == ALLEGRO_EVENT_DISPLAY_CLOSE){
@@ -60,18 +82,23 @@ int main(){
             }
         }
 
-        if(direction == CIMA || direction == BAIXO){
-            head_y += direction == BAIXO ? speed : -speed;
-        } else {
-            head_x += direction == DIREITA ? speed : -speed;
-        }
-
-        correctPosition(&head_x, &head_y, direction);
-
-
         al_clear_to_color(al_map_rgb(0, 0, 0));
         al_flip_display();
-        al_draw_filled_rectangle(head_x, head_y, head_x+sizeSquare, head_y+sizeSquare, al_map_rgb(0, 255, 0));
+
+        for(int i = 0; i < ARRAY_SIZE(snake); i++){
+            if(snake[i].direction != selectedDirection){
+                snake[i].direction = selectedDirection;
+                if(isAxisY(snake[i].direction)){
+                    snake[i].y += snake[i].direction == BAIXO ? speed : -speed;
+                } else {
+                    snake[i].x += snake[i].direction == DIREITA ? speed : -speed;
+                }
+            }
+
+            correctPosition(&snake[i]);
+            drawSquare(&snake[i]);
+        }
+
         al_flip_display();
     }
 
@@ -91,14 +118,19 @@ bool isOutOfBounds(int position, int direction){
     }
 }
 
-void correctPosition(int *x, int *y, int direction){
-    if(direction == CIMA || direction == BAIXO){
-        if(isOutOfBounds(*y, direction)){
-            *y = direction == CIMA ? ALTURA_TELA : -sizeSquare;
+bool isAxisY(int direction){
+    return direction == BAIXO || direction == CIMA;
+}
+
+void correctPosition(Square *square){
+    int direction = square->direction;//Direction that the square is going
+    if(isAxisY(direction)){
+        if(isOutOfBounds(square->y, direction)){
+            square->y = direction == CIMA ? ALTURA_TELA : -sizeSquare;
         }
     } else{
-        if(isOutOfBounds(*x, direction)){
-            *x = direction == DIREITA ? -sizeSquare : LARGURA_TELA;
+        if(isOutOfBounds(square->x, direction)){
+            square->x = direction == DIREITA ? -sizeSquare : LARGURA_TELA;
         }
     }
 }
@@ -138,4 +170,31 @@ bool inicializar(){
     al_register_event_source(fila_eventos, al_get_display_event_source(janela));
 
     return true;
+}
+
+void drawSquare(Square *square){
+    int x = square->x;
+    int y = square->y;
+    if(square->type == BODY){
+        switch (square->direction) {
+            case CIMA:
+                y += gapSquare;//Shift down
+                al_draw_filled_rectangle(x, y, x+sizeSquare, y+sizeSquare, al_map_rgb(0, 255, 0));
+                break;
+            case DIREITA:
+                x -= gapSquare;//Shift left
+                al_draw_filled_rectangle(x, y, x+sizeSquare, y+sizeSquare, al_map_rgb(0, 255, 0));
+                break;
+            case BAIXO:
+                y -= gapSquare;//Shift up
+                al_draw_filled_rectangle(x, y, x+sizeSquare, y+sizeSquare, al_map_rgb(0, 255, 0));
+                break;
+            case ESQUERDA:
+                x += gapSquare;//Shift right
+                al_draw_filled_rectangle(x, y, x+sizeSquare, y+sizeSquare, al_map_rgb(0, 255, 0));
+                break;
+        }
+    } else {
+        al_draw_filled_rectangle(x, y, x+sizeSquare, y+sizeSquare, al_map_rgb(0, 255, 0));
+    }
 }
