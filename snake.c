@@ -14,11 +14,31 @@
 #define HEAD "HEAD"
 #define BODY "BODY"
 
+typedef struct LinkedList{
+    int x;
+    int y;
+    int direction;
+    struct LinkedList *next;
+} LinkedList;
+
+typedef struct Square{
+    char *type;//HEAD or BODY
+    int direction;
+    int x;
+    int y;
+    LinkedList *nextMove;
+} Square;
+
+//CONFIG VARIABLES
 const int LARGURA_TELA = 640;
 const int ALTURA_TELA = 480;
+//------------------
 
+//OTHERS VARIABLES
 ALLEGRO_DISPLAY *janela = NULL;
 ALLEGRO_EVENT_QUEUE *fila_eventos = NULL;
+LinkedList* lastNode = NULL;
+//------------------
 
 //GAME VARIABLES
 int sizeSquare = 30;
@@ -29,15 +49,13 @@ int speed = 10;
 bool inicializar();
 bool isOutOfBounds();
 bool isAxisY();
+bool isLastIndex(int index, int size);
+void changePosition(Square *square, bool isLastSquare);
 void correctPosition();
 void drawSquare();
-
-typedef struct Square{
-    char *type;//HEAD or BODY
-    int direction;
-    int x;
-    int y;
-} Square;
+LinkedList* createNode(Square head, int direction);
+void freeNodeRecursive(LinkedList *currentNode);
+LinkedList* freeNodeGetNext(LinkedList *currentNode);
 
 int main(){
     if(!inicializar()){
@@ -48,21 +66,23 @@ int main(){
     int y = randBelow(ALTURA_TELA);
 
     Square snake[] = {
-        {HEAD, DIREITA, x, y},
-        {BODY, DIREITA, x-gapSquare-sizeSquare, y}
+        {HEAD, DIREITA, x, y, NULL},
+        {BODY, DIREITA, x-gapSquare-sizeSquare, y, NULL}
     };
 
     bool shouldExit = false;
-    int selectedDirection = DIREITA;
+    int selectedDirection, directionBeforeChange;
 
     while(shouldExit == false){
         ALLEGRO_EVENT evento;
         ALLEGRO_TIMEOUT timeout;
         al_init_timeout(&timeout, 0.05);
-
+        bool hasNewNode = false;
         int hasEvents = al_wait_for_event_until(fila_eventos, &evento, &timeout);
+        selectedDirection = -1;//Initialize with a not defined value for direction every loop
         if(hasEvents){
             if(evento.type == ALLEGRO_EVENT_KEY_DOWN){
+                directionBeforeChange = snake[0].direction;
                 switch(evento.keyboard.keycode){
                     case ALLEGRO_KEY_UP:
                         selectedDirection = CIMA;
@@ -77,8 +97,17 @@ int main(){
                         selectedDirection = DIREITA;
                         break;
                 }
+                if(directionBeforeChange != selectedDirection){
+                    LinkedList *nodeRef = createNode(snake[0], selectedDirection);
+                    if(lastNode != NULL){
+                        lastNode->next = nodeRef;
+                    }
+                    lastNode = nodeRef;//Replace for the newest lastNode
+                    hasNewNode = true;
+                }
             } else if (evento.type == ALLEGRO_EVENT_DISPLAY_CLOSE){
                 shouldExit = true;
+                freeNodeRecursive(snake[ARRAY_SIZE(snake)-1].nextMove);
             }
         }
 
@@ -86,15 +115,16 @@ int main(){
         al_flip_display();
 
         for(int i = 0; i < ARRAY_SIZE(snake); i++){
-            if(snake[i].direction != selectedDirection){
-                snake[i].direction = selectedDirection;
-                if(isAxisY(snake[i].direction)){
-                    snake[i].y += snake[i].direction == BAIXO ? speed : -speed;
-                } else {
-                    snake[i].x += snake[i].direction == DIREITA ? speed : -speed;
+            if(directionBeforeChange != selectedDirection){//Prevent action when selectedDirection is the current direction
+                if(hasNewNode && snake[i].type == BODY && snake[i].nextMove == NULL){
+                    snake[i].nextMove = lastNode;
                 }
-            }
 
+                if(i == 0 && selectedDirection != -1){
+                    snake[i].direction = selectedDirection;
+                }
+                changePosition(&snake[i], isLastIndex(i, ARRAY_SIZE(snake)));
+            }
             correctPosition(&snake[i]);
             drawSquare(&snake[i]);
         }
@@ -122,6 +152,24 @@ bool isAxisY(int direction){
     return direction == BAIXO || direction == CIMA;
 }
 
+void changePosition(Square *square, bool isLastSquare){
+    if(square->nextMove != NULL){
+        if(square->nextMove->x == square->x && square->nextMove->y == square->y){//In the change position
+            square->direction = square->nextMove->direction;
+            if(isLastSquare){
+                square->nextMove = freeNodeGetNext(square->nextMove);
+            } else {
+                square->nextMove = square->nextMove->next;
+            }
+        }
+    }
+    if(isAxisY(square->direction)){
+        square->y += square->direction == BAIXO ? speed : -speed;
+    } else {
+        square->x += square->direction == DIREITA ? speed : -speed;
+    }
+}
+
 void correctPosition(Square *square){
     int direction = square->direction;//Direction that the square is going
     if(isAxisY(direction)){
@@ -132,6 +180,26 @@ void correctPosition(Square *square){
         if(isOutOfBounds(square->x, direction)){
             square->x = direction == DIREITA ? -sizeSquare : LARGURA_TELA;
         }
+    }
+}
+
+LinkedList* freeNodeGetNext(LinkedList *currentNode){
+    //double free or corruption (fasttop)
+    //Abortado (imagem do núcleo gravada)
+    //FIXME: Tem alguma coisa errada ao liberar a memoria, provavelmente to liberando algo q n precisava liberar. %p p/ ponteiro.
+    if(currentNode != NULL){
+        LinkedList *nextNode = currentNode->next;
+        free(currentNode);
+        return nextNode;
+    }
+    return NULL;
+}
+
+void freeNodeRecursive(LinkedList *currentNode){
+    if(currentNode != NULL){
+        LinkedList *nextNode = currentNode->next;
+        free(currentNode);
+        freeNodeRecursive(nextNode);
     }
 }
 
@@ -197,4 +265,17 @@ void drawSquare(Square *square){
     } else {
         al_draw_filled_rectangle(x, y, x+sizeSquare, y+sizeSquare, al_map_rgb(0, 255, 0));
     }
+}
+
+bool isLastIndex(int index, int size){
+    return index == (size - 1);
+}
+
+LinkedList* createNode(Square head, int direction){
+    LinkedList *newNode = (LinkedList*) calloc(1,sizeof(LinkedList));
+    newNode->x = head.x;
+    newNode->y = head.y;
+    newNode->direction = direction;
+    newNode->next = NULL;
+    return newNode;
 }
