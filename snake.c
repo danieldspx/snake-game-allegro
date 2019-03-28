@@ -29,9 +29,14 @@ typedef struct Square{
     LinkedList *nextMove;
 } Square;
 
+//FIXME: ELE TA DEIXANDO MUDAR A POSICAO QUANDO A HEAD AINDA TA NA METADE DA MUDANCA DE POSICAO
+//TEM ALGUMA COISA ERRADA COM A LINKED LIST
+
 //CONFIG VARIABLES
-const int LARGURA_TELA = 640;
-const int ALTURA_TELA = 480;
+const int LARGURA_TELA = 600;
+const int ALTURA_TELA = 600;
+int freeHeap = 0;
+int createdHeap = 0;
 //------------------
 
 //OTHERS VARIABLES
@@ -43,19 +48,20 @@ LinkedList* lastNode = NULL;
 //GAME VARIABLES
 int sizeSquare = 30;
 int gapSquare = 3;//Gap between squares
-int speed = 10;
+int speed = 4;
 //------------------
 
 bool inicializar();
 bool isOutOfBounds();
 bool isAxisY();
+bool isBetween(int value, int min, int max);
 bool isLastIndex(int index, int size);
-void changePosition(Square *square, bool isLastSquare);
-void correctPosition();
+bool changePosition(Square *square, bool isLastSquare);
+void correctPosition(Square *square, Square *prevSquare, bool hasChangedDirection);
 void drawSquare();
 LinkedList* createNode(Square head, int direction);
 void freeNodeRecursive(LinkedList *currentNode);
-LinkedList* freeNodeGetNext(LinkedList *currentNode);
+void freeNode(LinkedList *currentNode);
 
 int main(){
     if(!inicializar()){
@@ -76,7 +82,7 @@ int main(){
     while(shouldExit == false){
         ALLEGRO_EVENT evento;
         ALLEGRO_TIMEOUT timeout;
-        al_init_timeout(&timeout, 0.05);
+        al_init_timeout(&timeout, 0.5);
         bool hasNewNode = false;
         int hasEvents = al_wait_for_event_until(fila_eventos, &evento, &timeout);
         selectedDirection = -1;//Initialize with a not defined value for direction every loop
@@ -107,6 +113,7 @@ int main(){
                 }
             } else if (evento.type == ALLEGRO_EVENT_DISPLAY_CLOSE){
                 shouldExit = true;
+                printf("%d - %d\n", freeHeap, createdHeap);
                 freeNodeRecursive(snake[ARRAY_SIZE(snake)-1].nextMove);
             }
         }
@@ -115,17 +122,24 @@ int main(){
         al_flip_display();
 
         for(int i = 0; i < ARRAY_SIZE(snake); i++){
+            bool hasChangedDirection = false;
             if(directionBeforeChange != selectedDirection){//Prevent action when selectedDirection is the current direction
-                if(hasNewNode && snake[i].type == BODY && snake[i].nextMove == NULL){
+                if(hasNewNode && snake[i].type == BODY && snake[i].nextMove == NULL && lastNode != NULL){
                     snake[i].nextMove = lastNode;
                 }
 
                 if(i == 0 && selectedDirection != -1){
                     snake[i].direction = selectedDirection;
                 }
-                changePosition(&snake[i], isLastIndex(i, ARRAY_SIZE(snake)));
+                hasChangedDirection = changePosition(&snake[i], isLastIndex(i, ARRAY_SIZE(snake)));
             }
-            correctPosition(&snake[i]);
+
+            if(i == 0){//Without the previousSquare
+                correctPosition(&snake[i], NULL, false);
+            } else {
+                correctPosition(&snake[i], &snake[i-1], hasChangedDirection);
+            }
+
             drawSquare(&snake[i]);
         }
 
@@ -152,14 +166,27 @@ bool isAxisY(int direction){
     return direction == BAIXO || direction == CIMA;
 }
 
-void changePosition(Square *square, bool isLastSquare){
+bool isBetween(int value, int min, int max){
+    return value >= min && value <= max;
+}
+
+bool changePosition(Square *square, bool isLastSquare){
+    bool hasChangedDirection = false;
+    bool shouldPerformChange = false;//Should change direction (In case it is in position)
     if(square->nextMove != NULL){
-        if(square->nextMove->x == square->x && square->nextMove->y == square->y){//In the change position
+        fprintf(stderr, "X %d == %d && Y %d == %d\n",square->x, square->nextMove->x, square->y, square->nextMove->y );
+        if(isAxisY(square->direction)){
+            shouldPerformChange = isBetween(square->y, square->nextMove->y - speed, square->nextMove->y + speed);
+        } else {//isAxisX
+            shouldPerformChange = isBetween(square->x, square->nextMove->x - speed, square->nextMove->x + speed);
+        }
+        if(shouldPerformChange){//In the change position
             square->direction = square->nextMove->direction;
+            hasChangedDirection = true;
+            LinkedList* nodeToFree = square->nextMove;//Will be free in memory
+            square->nextMove = square->nextMove->next;
             if(isLastSquare){
-                square->nextMove = freeNodeGetNext(square->nextMove);
-            } else {
-                square->nextMove = square->nextMove->next;
+                freeNode(nodeToFree);
             }
         }
     }
@@ -168,31 +195,50 @@ void changePosition(Square *square, bool isLastSquare){
     } else {
         square->x += square->direction == DIREITA ? speed : -speed;
     }
+    return hasChangedDirection;
 }
 
-void correctPosition(Square *square){
+void correctPosition(Square *square, Square *prevSquare, bool hasChangedDirection){
     int direction = square->direction;//Direction that the square is going
     if(isAxisY(direction)){
         if(isOutOfBounds(square->y, direction)){
             square->y = direction == CIMA ? ALTURA_TELA : -sizeSquare;
+        } else if (hasChangedDirection && prevSquare != NULL) {
+            if(direction == CIMA){
+                square->y = prevSquare->y + sizeSquare + gapSquare;
+            } else {//BAIXO
+                square->y = prevSquare->y - (sizeSquare + gapSquare);
+            }
+
+            if(square->x != prevSquare->x){//KEEP SAME ON X
+                square->x = prevSquare->x;
+            }
         }
     } else{
         if(isOutOfBounds(square->x, direction)){
             square->x = direction == DIREITA ? -sizeSquare : LARGURA_TELA;
+        } else if (hasChangedDirection && prevSquare != NULL) {
+            if(direction == DIREITA){//KEEP THE GAP
+                square->x = prevSquare->x - (sizeSquare+gapSquare);
+            } else {//ESQUERDA
+                square->x = prevSquare->x + sizeSquare + gapSquare;
+            }
+
+            if(square->y != prevSquare->y){//KEEP SAME ON Y
+                square->y = prevSquare->y;
+            }
         }
     }
 }
 
-LinkedList* freeNodeGetNext(LinkedList *currentNode){
+void freeNode(LinkedList *currentNode){
     //double free or corruption (fasttop)
     //Abortado (imagem do núcleo gravada)
     //FIXME: Tem alguma coisa errada ao liberar a memoria, provavelmente to liberando algo q n precisava liberar. %p p/ ponteiro.
     if(currentNode != NULL){
-        LinkedList *nextNode = currentNode->next;
         free(currentNode);
-        return nextNode;
+        freeHeap++;
     }
-    return NULL;
 }
 
 void freeNodeRecursive(LinkedList *currentNode){
@@ -272,6 +318,7 @@ bool isLastIndex(int index, int size){
 }
 
 LinkedList* createNode(Square head, int direction){
+    createdHeap++;
     LinkedList *newNode = (LinkedList*) calloc(1,sizeof(LinkedList));
     newNode->x = head.x;
     newNode->y = head.y;
