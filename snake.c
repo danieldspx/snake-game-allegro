@@ -30,7 +30,7 @@ typedef struct Square{
 } Square;
 
 //FIXME: ELE TA DEIXANDO MUDAR A POSICAO QUANDO A HEAD AINDA TA NA METADE DA MUDANCA DE POSICAO
-//TEM ALGUMA COISA ERRADA COM A LINKED LIST
+//
 
 //CONFIG VARIABLES
 const int LARGURA_TELA = 600;
@@ -186,6 +186,9 @@ bool changePosition(Square *square, bool isLastSquare){
             LinkedList* nodeToFree = square->nextMove;//Will be free in memory
             square->nextMove = square->nextMove->next;
             if(isLastSquare){
+                if(nodeToFree == lastNode){
+                    lastNode = NULL;//Remove the lastNode reference. This fix the BUG
+                }
                 freeNode(nodeToFree);
             }
         }
@@ -232,9 +235,6 @@ void correctPosition(Square *square, Square *prevSquare, bool hasChangedDirectio
 }
 
 void freeNode(LinkedList *currentNode){
-    //double free or corruption (fasttop)
-    //Abortado (imagem do núcleo gravada)
-    //FIXME: Tem alguma coisa errada ao liberar a memoria, provavelmente to liberando algo q n precisava liberar. %p p/ ponteiro.
     if(currentNode != NULL){
         free(currentNode);
         freeHeap++;
